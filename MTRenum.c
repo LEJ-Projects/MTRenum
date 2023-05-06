@@ -2,11 +2,13 @@
 **
 ** Program:   MTRenum.cpp
 **
-** Purpose:  Reads data from a file and displays it.
+** Purpose:  Reads a TRS-80 Model 100 BASIC program from a file and 
+**           renumbers it based on user selected starting line and line
+**           increment.
 **
 ** Author: L. Johnson,
 ** Created: 02/19/23
-** Current Version: 1.0
+** Current Version: 1.3
 ***********************************************************************
 **  Revision   Date       Engineer       Description of Change
 **  --------   --------   ------------   ------------------------------
@@ -14,7 +16,9 @@
 **  1.1        24 Mar 23  L. Johnson     Remove spaces & convert to Uppercase
 **  1.2        26 Mar 23  L. Johnson     Added RESTORE keyword, Correct
 **                                       comma recognition, treat DATA
-**                                       statements like remarks                                     
+**                                       statements like remarks    
+**  1.3        05 May 23  L. Johnson     Handle ctl-z termination, added
+**                                       RESUME keyword and misc improvements                              
 **********************************************************************/
 #define TRUE  1
 #define FALSE 0
@@ -24,7 +28,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 //using namespace std;
-void cont();
+void cont(void);
 int main(int argc, char** argv) {
 
 
@@ -37,7 +41,6 @@ FILE  *fi, *fo;
   char wrk_str[256];      // Working Sttring (Input string less spaces)
   char ln_str[256];       // Line  string
   char tmpstr[256];       // Temporary string
-  char dbstr[256];        // Debug string...
   int numq;               // Number of double quotes in a line
   int qi;                 // Quote index (increments on end quotes)
   int qidxb[256];          // Quote begins
@@ -62,9 +65,6 @@ FILE  *fi, *fo;
   int p2i;        // Pass 2 char increment
   int qreg;       // Quote Region - True when between quotes otherwise false
   int kwfnd;	// Number of keywords found in a line
-  int kib[256];   // Key index begin
-  int kie[256];   // key  index ends
-
 
     // Line Number Search Parameters
   int lnfnd;   // Number of line numbers found in the line
@@ -75,7 +75,7 @@ FILE  *fi, *fo;
   int nlnv;      // New Line Number Value
   int rlnv;     // Referenced line number value
 
-  printf("MTRenum - Version 1.2\n");
+  printf("MTRenum - Version 1.3\n");
 
 
   printf("Enter input file name: ");
@@ -121,7 +121,9 @@ FILE  *fi, *fo;
 // Pass 1 = get line numbers.
   done=0;
   while (done == 0) {
-    if (fgets(str_in,256,fi) != NULL){
+    if (fgets(str_in,256,fi) == NULL) done=1;
+    if (str_in[0]==26) done=1;  // A control-Z will terminate this input file
+    if (done==0) {
       // Remove trailing carriage return & linefeed
       while ((str_in[strlen(str_in)-1]==13) ||
         (str_in[strlen(str_in)-1]==10) ) str_in[strlen(str_in)-1]=0;
@@ -130,9 +132,7 @@ FILE  *fi, *fo;
       // if (scrOut==1) printf("%d %s\n",ln[li],ln_str);
       li++;  // Increment line count.
       total_lines=li; // Need to store this for pass 2
-    } else {
-	    done = 1;
-    }  //if (fgets(str_in,256,fi) != NULL){
+    }  //if (done==0) {
   } // end while
   fclose(fi);   // Close input file
 
@@ -151,6 +151,7 @@ FILE  *fi, *fo;
   li=0;  // Reset line increment for 2nd pass
   while (done == 0) {
     if (fgets(str_in,256,fi) == NULL) done=1;
+    if (str_in[0]==26) done=1;  // A control-Z will terminate this input file
     if (done==0) {  // Not Done
     // Remove trailing carriage return & linefeed
       for (i=strlen(str_in)-1;i>0;i--) {
@@ -260,43 +261,37 @@ FILE  *fi, *fo;
                           // Check for keyword search...
             case 1:
                 if (strncmp(&wrk_str[p2i],"THEN",4) ==0) {// Found THEN
-                   kib[kwfnd]=p2i;
-                   kie[kwfnd]=p2i+3;
                    p2i=p2i+3;
                    while (wrk_str[p2i+1]==' ')p2i++;  // skip spaces before possible number
                    if(isdigit(wrk_str[p2i+1]))srchType=2; // Time to look for numbers (maybe)
                    kwfnd++;
                 }  // if (strncmp(&ln_str[p2i],"THEN",4) ==0)
                 if (strncmp(&wrk_str[p2i],"ELSE",4) ==0) {// Found ELSE
-                   kib[kwfnd]=p2i;
-                   kie[kwfnd]=p2i+3;
                    p2i=p2i+3;
                    while (wrk_str[p2i+1]==' ')p2i++;  // Trim spaces before possible number
                    if(isdigit(wrk_str[p2i+1]))srchType=2; // Time to look for numbers (maybe)
                    kwfnd++;
                 }  // if (strncmp(&ln_str[p2i],"ELSE",4) ==0)
                 if (strncmp(&wrk_str[p2i],"GOTO",4) ==0) {// Found GOTO
-                   kib[kwfnd]=p2i;
-                   kie[kwfnd]=p2i+3;
                    p2i=p2i+3;
                    srchType=2; // Time to look for numbers
                    kwfnd++;
                 }  // if (strncmp(&ln_str[p2i],"GOTO",4) ==0)
                 if (strncmp(&wrk_str[p2i],"GOSUB",5) ==0) {// Found GOSUB
-                   kib[kwfnd]=p2i;
-                   kie[kwfnd]=p2i+4;
                    p2i=p2i+4;
                    srchType=2; // Time to look for numbers
                    kwfnd++;
                 }  // if (strncmp(&ln_str[p2i],"GOSUB",5) ==0)
+                if (strncmp(&wrk_str[p2i],"RESUME",6) ==0) {// Found RESUME
+                   p2i=p2i+5;
+                   srchType=2; // Time to look for numbers
+                   kwfnd++;
+                }  // if (strncmp(&ln_str[p2i],"RESUME",6) ==0)
                 if (strncmp(&wrk_str[p2i],"RESTORE",7) ==0) {// Found RESTORE
-                   kib[kwfnd]=p2i;
-                   kie[kwfnd]=p2i+6;
                    p2i=p2i+6;
                    srchType=2; // Time to look for numbers
                    kwfnd++;
                 }  // if (strncmp(&ln_str[p2i],"RESTORE",7) ==0)
-
                 if ((strncmp(&wrk_str[p2i],"REM",3) ==0)
                     || (wrk_str[p2i]=='\''))
                    p2i=(int)strlen(wrk_str);  // No need to look further
@@ -413,7 +408,7 @@ FILE  *fi, *fo;
 **
 ****************************************************************/
 
-void cont() {
+void cont(void) {
 
   getchar();   /* Seems to be necessary to flush stdin */
   printf("Press enter to continue:");
